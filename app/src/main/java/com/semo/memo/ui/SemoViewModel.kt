@@ -17,7 +17,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -52,11 +54,15 @@ class SemoViewModel(
     private val preferences: UserPreferences,
     private val savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
-    private val selection = MutableStateFlow<Set<Long>>(emptySet())
-    val events = MutableSharedFlow<UiEvent>(extraBufferCapacity = 4)
-    var draft: String
-        get() = savedStateHandle["memo_draft"] ?: ""
-        set(value) { savedStateHandle["memo_draft"] = value }
+    private val selection = MutableStateFlow(readSelection())
+    private val _events = MutableSharedFlow<UiEvent>(extraBufferCapacity = 4)
+    val events: SharedFlow<UiEvent> = _events.asSharedFlow()
+
+    val draft: StateFlow<String> = savedStateHandle.getStateFlow(KEY_DRAFT, "")
+
+    fun updateDraft(value: String) {
+        savedStateHandle[KEY_DRAFT] = value
+    }
 
     val state: StateFlow<SemoUiState> = combine(
         repository.activeMemos,
@@ -81,35 +87,39 @@ class SemoViewModel(
 
     fun sendMemo(text: String, onSuccess: () -> Unit = {}) = action("메모를 저장하지 못했습니다.") {
         val id = repository.createMemo(text)
-        draft = ""
+        updateDraft("")
         onSuccess()
-        events.emit(UiEvent.MemoCreated(id))
+        _events.emit(UiEvent.MemoCreated(id))
     }
 
     fun updateMemo(id: Long, text: String) = action("메모를 수정하지 못했습니다.") {
         repository.updateMemo(id, text)
-        events.emit(UiEvent.Message("메모를 수정했습니다."))
+        _events.emit(UiEvent.Message("메모를 수정했습니다."))
     }
 
     fun deleteMemo(id: Long) = action("메모를 삭제하지 못했습니다.") {
         val wasLinked = repository.deleteMemo(id)
-        events.emit(UiEvent.Message(if (wasLinked) "묶음 연결과 원본 메모를 삭제했습니다." else "메모를 삭제했습니다."))
+        _events.emit(UiEvent.Message(if (wasLinked) "묶음 연결과 원본 메모를 삭제했습니다." else "메모를 삭제했습니다."))
     }
 
     fun toggleSelection(id: Long) {
-        selection.value = selection.value.toMutableSet().apply {
-            if (!add(id)) remove(id)
-        }
+        persistSelection(
+            selection.value.toMutableSet().apply {
+                if (!add(id)) remove(id)
+            },
+        )
     }
 
-    fun clearSelection() { selection.value = emptySet() }
+    fun clearSelection() {
+        persistSelection(emptySet())
+    }
 
     fun bundleSelected() = action("묶음을 만들지 못했습니다.") {
         val ids = selection.value
         if (ids.isEmpty()) return@action
         val id = repository.createBundle(ids)
-        selection.value = emptySet()
-        events.emit(UiEvent.BundleCreated(ids.size, id))
+        persistSelection(emptySet())
+        _events.emit(UiEvent.BundleCreated(ids.size, id))
     }
 
     fun updateBundleTitle(id: Long, title: String) = action("제목을 저장하지 못했습니다.") {
@@ -124,7 +134,7 @@ class SemoViewModel(
         val job = viewModelScope.launch {
             delay(450)
             runCatching { repository.updateBundleTitle(id, title) }
-                .onFailure { events.emit(UiEvent.Message("제목을 저장하지 못했습니다.")) }
+                .onFailure { _events.emit(UiEvent.Message("제목을 저장하지 못했습니다.")) }
         }
         job.invokeOnCompletion { titleSaveJobs.remove(id, job) }
         titleSaveJobs[id] = job
@@ -134,7 +144,7 @@ class SemoViewModel(
         titleSaveJobs.remove(id)?.cancel()
         viewModelScope.launch {
             runCatching { repository.updateBundleTitle(id, title) }
-                .onFailure { events.emit(UiEvent.Message("제목을 저장하지 못했습니다.")) }
+                .onFailure { _events.emit(UiEvent.Message("제목을 저장하지 못했습니다.")) }
         }
     }
 
@@ -143,7 +153,7 @@ class SemoViewModel(
         val job = viewModelScope.launch {
             delay(450)
             runCatching { repository.updateBundleContent(id, content) }
-                .onFailure { events.emit(UiEvent.Message("편집 내용을 저장하지 못했습니다.")) }
+                .onFailure { _events.emit(UiEvent.Message("편집 내용을 저장하지 못했습니다.")) }
         }
         job.invokeOnCompletion { contentSaveJobs.remove(id, job) }
         contentSaveJobs[id] = job
@@ -153,7 +163,7 @@ class SemoViewModel(
         contentSaveJobs.remove(id)?.cancel()
         viewModelScope.launch {
             runCatching { repository.updateBundleContent(id, content) }
-                .onFailure { events.emit(UiEvent.Message("편집 내용을 저장하지 못했습니다.")) }
+                .onFailure { _events.emit(UiEvent.Message("편집 내용을 저장하지 못했습니다.")) }
         }
     }
 
@@ -163,18 +173,31 @@ class SemoViewModel(
         repository.deleteBundle(id); onDone()
     }
     fun addMemos(bundleId: Long, ids: Set<Long>) = action("메모를 추가하지 못했습니다.") {
-        repository.addMemos(bundleId, ids); events.emit(UiEvent.Message("메모를 추가했습니다."))
+        repository.addMemos(bundleId, ids); _events.emit(UiEvent.Message("메모를 추가했습니다."))
     }
     fun removeMemo(bundleId: Long, memoId: Long) = action("메모를 빼지 못했습니다.") {
-        repository.removeMemo(bundleId, memoId); events.emit(UiEvent.Message("묶음에서만 제거했습니다."))
+        repository.removeMemo(bundleId, memoId); _events.emit(UiEvent.Message("묶음에서만 제거했습니다."))
     }
     fun setCompactCards(value: Boolean) = action("설정을 저장하지 못했습니다.") { preferences.setCompactCards(value) }
     fun clearAll(onDone: () -> Unit = {}) = action("데이터를 삭제하지 못했습니다.") {
-        repository.clearAll(); selection.value = emptySet(); draft = ""; onDone()
+        repository.clearAll(); persistSelection(emptySet()); updateDraft(""); onDone()
+    }
+
+    private fun readSelection(): Set<Long> =
+        savedStateHandle.get<LongArray>(KEY_SELECTION)?.toSet() ?: emptySet()
+
+    private fun persistSelection(ids: Set<Long>) {
+        selection.value = ids
+        savedStateHandle[KEY_SELECTION] = ids.toLongArray()
     }
 
     private fun action(error: String, block: suspend () -> Unit) = viewModelScope.launch {
-        runCatching { block() }.onFailure { events.emit(UiEvent.Message(it.message ?: error)) }
+        runCatching { block() }.onFailure { _events.emit(UiEvent.Message(it.message ?: error)) }
+    }
+
+    private companion object {
+        const val KEY_DRAFT = "memo_draft"
+        const val KEY_SELECTION = "memo_selection"
     }
 }
 

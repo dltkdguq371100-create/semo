@@ -269,7 +269,7 @@ private fun BottomNav(current: String?, onNavigate: (String) -> Unit) {
 @Composable
 private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (Long) -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
-    var draft by rememberSaveable { mutableStateOf(vm.draft) }
+    val draft by vm.draft.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<MemoEntity?>(null) }
     var deleting by remember { mutableStateOf<MemoEntity?>(null) }
     var actionMemo by remember { mutableStateOf<MemoEntity?>(null) }
@@ -325,10 +325,8 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
         bottomBar = {
             if (!state.selectionMode) MemoComposer(
                 text = draft,
-                onText = { draft = it; vm.draft = it },
-                onSend = {
-                    vm.sendMemo(draft) { draft = "" }
-                },
+                onText = vm::updateDraft,
+                onSend = { vm.sendMemo(draft) },
                 onHeightChanged = { height ->
                     if (composerHeight > 0 && height > composerHeight && state.timeline.isNotEmpty()) {
                         val layout = listState.layoutInfo

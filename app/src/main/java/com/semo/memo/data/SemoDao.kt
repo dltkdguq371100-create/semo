@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface SemoDao {
-    @Query("SELECT * FROM memos WHERE isDeleted = 0 AND isArchived = 0 ORDER BY createdAt ASC")
+    @Query("SELECT * FROM memos WHERE isDeleted = 0 ORDER BY createdAt ASC")
     fun observeActiveMemos(): Flow<List<MemoEntity>>
 
     @Query("SELECT * FROM memos WHERE isDeleted = 0 ORDER BY createdAt DESC")
