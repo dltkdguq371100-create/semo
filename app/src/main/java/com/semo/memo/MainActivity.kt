@@ -760,8 +760,9 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
     val value = bundle
 
     LaunchedEffect(value?.bundle?.id) {
-        if (title == null) title = value?.bundle?.title.orEmpty()
-        if (content == null) content = value?.bundle?.editableContent.orEmpty()
+        val loaded = value ?: return@LaunchedEffect
+        if (title == null) title = loaded.bundle.title.orEmpty()
+        if (content == null) content = loaded.bundle.editableContent
     }
 
     Scaffold(
