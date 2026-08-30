@@ -598,6 +598,8 @@ private fun BundleListScreen(vm: SemoViewModel, onBundle: (Long) -> Unit) {
     val compact by vm.compactCards.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(BundleFilter.ALL) }
+    // TODO: If memo/bundle counts grow into the thousands, replace in-memory filtering
+    // with a Room FTS4 virtual table (and matching DAO queries) for title/content search.
     val visible = bundles.filter { value ->
         val matchesFilter = when (filter) {
             BundleFilter.ALL -> !value.bundle.isArchived
@@ -712,6 +714,8 @@ private fun SearchScreen(vm: SemoViewModel, onBack: () -> Unit, onBundle: (Long)
     val bundles by vm.allBundles.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     val requester = remember { FocusRequester() }
+    // TODO: If memo/bundle counts grow into the thousands, replace in-memory filtering
+    // with a Room FTS4 virtual table (and matching DAO queries) for title/content search.
     val memoResults = remember(query, memos) { if (query.isBlank()) emptyList() else memos.filter { !it.isDeleted && it.content.contains(query, true) } }
     val bundleResults = remember(query, bundles) { if (query.isBlank()) emptyList() else bundles.filter {
         it.bundle.title.orEmpty().contains(query, true) || it.bundle.editableContent.contains(query, true) || it.memos.any { memo -> memo.content.contains(query, true) }
