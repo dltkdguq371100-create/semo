@@ -209,6 +209,10 @@ class SemoViewModel(
         _events.emit(UiEvent.Message("백업으로 데이터를 대체했습니다."))
     }
 
+    fun notifyCopied() {
+        viewModelScope.launch { _events.emit(UiEvent.Message("복사했습니다")) }
+    }
+
     private fun readSelection(): Set<Long> =
         savedStateHandle.get<LongArray>(KEY_SELECTION)?.toSet() ?: emptySet()
 

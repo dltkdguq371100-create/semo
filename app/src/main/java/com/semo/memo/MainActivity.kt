@@ -1,5 +1,7 @@
 package com.semo.memo
 
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -53,7 +55,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
@@ -62,8 +66,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Upload
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -106,6 +110,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -113,6 +118,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -410,6 +416,7 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
         MemoActionSheet(
             memo = memo,
             onDismiss = { actionMemo = null },
+            onCopied = vm::notifyCopied,
             onEdit = { actionMemo = null; editing = memo },
             onDelete = { actionMemo = null; deleting = memo },
         )
@@ -527,9 +534,12 @@ internal fun MemoBubble(
 internal fun MemoActionSheet(
     memo: MemoEntity,
     onDismiss: () -> Unit,
+    onCopied: () -> Unit = {},
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = AppSurface,
@@ -542,6 +552,33 @@ internal fun MemoActionSheet(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             )
+            TextButton(
+                onClick = {
+                    clipboard.setText(AnnotatedString(memo.content))
+                    if (Build.VERSION.SDK_INT < 33) onCopied()
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Default.ContentCopy, null)
+                Spacer(Modifier.width(10.dp))
+                Text("복사", Modifier.weight(1f))
+            }
+            TextButton(
+                onClick = {
+                    val share = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, memo.content)
+                    }
+                    context.startActivity(Intent.createChooser(share, "공유"))
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Default.Share, null)
+                Spacer(Modifier.width(10.dp))
+                Text("공유", Modifier.weight(1f))
+            }
             TextButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.Edit, null)
                 Spacer(Modifier.width(10.dp))
