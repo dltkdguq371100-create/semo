@@ -137,11 +137,11 @@ class SemoRepository(private val database: SemoDatabase) {
 
     private fun syncSqliteSequence(table: String, maxId: Long) {
         val db = database.openHelper.writableDatabase
-        db.execSQL("DELETE FROM sqlite_sequence WHERE name = ?", arrayOf(table))
+        db.execSQL("DELETE FROM sqlite_sequence WHERE name = ?", arrayOf<Any>(table))
         if (maxId > 0L) {
             db.execSQL(
                 "INSERT INTO sqlite_sequence(name, seq) VALUES (?, ?)",
-                arrayOf(table, maxId),
+                arrayOf<Any>(table, maxId),
             )
         }
     }
