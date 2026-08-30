@@ -409,7 +409,7 @@ internal fun MemoComposer(
             value = text,
             onValueChange = onText,
             modifier = Modifier.weight(1f)
-                .heightIn(min = 48.dp, max = 108.dp)
+                .heightIn(min = 48.dp, max = 136.dp)
                 .clip(RoundedCornerShape(24.dp))
                 .background(AppSurface)
                 .border(1.dp, AppBorder, RoundedCornerShape(24.dp))
