@@ -74,8 +74,10 @@ class SemoRepository(private val database: SemoDatabase) {
     suspend fun addMemos(bundleId: Long, memoIds: Set<Long>) = database.withTransaction {
         val now = System.currentTimeMillis()
         val source = dao.memos(memoIds.toList())
-        dao.insertRefs(source.mapIndexed { index, memo ->
-            BundleMemoCrossRef(bundleId, memo.id, now, now + index)
+        // Keep sortOrder on the same 0,1,2… scale as createBundle (not epoch millis).
+        var nextOrder = (dao.maxSortOrder(bundleId) ?: -1L) + 1L
+        dao.insertRefs(source.map { memo ->
+            BundleMemoCrossRef(bundleId, memo.id, now, nextOrder++)
         })
         dao.bundle(bundleId)?.let { dao.updateBundle(it.copy(updatedAt = now)) }
     }

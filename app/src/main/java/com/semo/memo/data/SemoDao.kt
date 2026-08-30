@@ -55,6 +55,9 @@ interface SemoDao {
     @Query("SELECT COUNT(*) FROM bundle_memo_refs WHERE memoId = :memoId")
     suspend fun bundleCountForMemo(memoId: Long): Int
 
+    @Query("SELECT MAX(sortOrder) FROM bundle_memo_refs WHERE bundleId = :bundleId")
+    suspend fun maxSortOrder(bundleId: Long): Long?
+
     @Query("DELETE FROM bundle_memo_refs WHERE memoId = :memoId")
     suspend fun deleteRefsForMemo(memoId: Long)
 
