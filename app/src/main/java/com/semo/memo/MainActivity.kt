@@ -143,6 +143,7 @@ import com.semo.memo.data.previewText
 import com.semo.memo.ui.AppAccent
 import com.semo.memo.ui.AppBackground
 import com.semo.memo.ui.AppBorder
+import com.semo.memo.ui.AppSelected
 import com.semo.memo.ui.AppSurface
 import com.semo.memo.ui.AppSurfaceVariant
 import com.semo.memo.ui.InactiveIcon
@@ -299,7 +300,7 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
     var composerHeight by remember { mutableIntStateOf(0) }
     val imeVisible = rememberUpdatedState(WindowInsets.ime.getBottom(density) > 0)
     var expandedMemoIds by rememberSaveable(
-        stateSaver = Saver(
+        stateSaver = Saver<Set<Long>, ArrayList<Long>>(
             save = { ArrayList(it) },
             restore = { it.toSet() },
         ),
@@ -536,8 +537,8 @@ internal fun MemoBubble(
                 Modifier.widthIn(max = maxBubbleWidth)
                     .testTag("memo-bubble-${memo.id}")
                     .clip(RoundedCornerShape(17.dp))
-                    .background(if (selected) Color(0xFFE3E5E8) else AppSurfaceVariant)
-                    .then(if (selected) Modifier.border(1.dp, AppAccent, RoundedCornerShape(17.dp)) else Modifier)
+                    .background(if (selected) AppSelected else AppSurfaceVariant)
+                    .border(1.dp, if (selected) AppAccent else AppBorder, RoundedCornerShape(17.dp))
                     .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                     .padding(horizontal = 13.dp, vertical = 8.dp),
             ) {
@@ -1203,7 +1204,7 @@ private fun AddMemoDialog(memos: List<MemoEntity>, onDismiss: () -> Unit, onConf
                 items(memos, key = { it.id }) { memo ->
                     Card(
                         onClick = { selected = selected.toMutableSet().apply { if (!add(memo.id)) remove(memo.id) } },
-                        colors = CardDefaults.cardColors(containerColor = if (memo.id in selected) Color(0xFFE3E5E8) else AppSurfaceVariant),
+                        colors = CardDefaults.cardColors(containerColor = if (memo.id in selected) AppSelected else AppSurfaceVariant),
                         border = if (memo.id in selected) BorderStroke(1.dp, AppAccent) else null,
                     ) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {

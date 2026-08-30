@@ -10,7 +10,8 @@ import androidx.compose.ui.unit.dp
 
 val AppBackground = Color(0xFFFCFCFD)
 val AppSurface = Color(0xFFFFFFFF)
-val AppSurfaceVariant = Color(0xFFF0F1F4)
+val AppSurfaceVariant = Color(0xFFEAECEF)
+val AppSelected = Color(0xFFDDE0E4)
 val AppBorder = Color(0xFFDFE2E6)
 val PrimaryText = Color(0xFF17191C)
 val StrongText = Color(0xFF111317)
