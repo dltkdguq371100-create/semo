@@ -12,6 +12,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -137,8 +138,8 @@ class SemoViewModel(
         repository.updateBundleTitle(id, title)
     }
 
-    private val titleSaveJobs = mutableMapOf<Long, Job>()
-    private val contentSaveJobs = mutableMapOf<Long, Job>()
+    private val titleSaveJobs = ConcurrentHashMap<Long, Job>()
+    private val contentSaveJobs = ConcurrentHashMap<Long, Job>()
 
     fun updateBundleTitleDebounced(id: Long, title: String) {
         titleSaveJobs[id]?.cancel()
