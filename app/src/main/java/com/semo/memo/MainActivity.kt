@@ -767,12 +767,16 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
     val allMemos by vm.allMemos.collectAsStateWithLifecycle()
     var title by rememberSaveable(id) { mutableStateOf<String?>(null) }
     var content by rememberSaveable(id) { mutableStateOf<String?>(null) }
+    var titleDirty by rememberSaveable(id) { mutableStateOf(false) }
+    var contentDirty by rememberSaveable(id) { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     val value = bundle
     val latestTitle = rememberUpdatedState(title)
     val latestContent = rememberUpdatedState(content)
+    val latestTitleDirty = rememberUpdatedState(titleDirty)
+    val latestContentDirty = rememberUpdatedState(contentDirty)
 
     LaunchedEffect(value?.bundle?.id) {
         val loaded = value ?: return@LaunchedEffect
@@ -783,9 +787,9 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
     DisposableEffect(id) {
         onDispose {
             val pendingTitle = latestTitle.value
-            if (pendingTitle != null) vm.flushBundleTitle(id, pendingTitle)
+            if (latestTitleDirty.value && pendingTitle != null) vm.flushBundleTitle(id, pendingTitle)
             val pendingContent = latestContent.value
-            if (pendingContent != null) vm.flushBundleContent(id, pendingContent)
+            if (latestContentDirty.value && pendingContent != null) vm.flushBundleContent(id, pendingContent)
         }
     }
 
@@ -819,7 +823,7 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
             item {
                 OutlinedTextField(
                     value = title.orEmpty(),
-                    onValueChange = { title = it; vm.updateBundleTitleDebounced(id, it) },
+                    onValueChange = { title = it; titleDirty = true; vm.updateBundleTitleDebounced(id, it) },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("제목 (선택)") },
                     placeholder = { Text(value.displayTitle()) },
@@ -830,7 +834,7 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
                 SectionLabel("정리한 내용")
                 OutlinedTextField(
                     value = content.orEmpty(),
-                    onValueChange = { content = it; vm.updateBundleContentDebounced(id, it) },
+                    onValueChange = { content = it; contentDirty = true; vm.updateBundleContentDebounced(id, it) },
                     modifier = Modifier.fillMaxWidth().height(210.dp),
                     placeholder = { Text("내용을 자유롭게 정리하세요") },
                 )
