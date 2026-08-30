@@ -194,6 +194,24 @@ class SemoViewModel(
         repository.clearAll(); persistSelection(emptySet()); updateDraft(""); onDone()
     }
 
+    fun exportBackup(resolver: android.content.ContentResolver, uri: android.net.Uri) = action("내보내기에 실패했습니다.") {
+        val json = repository.encodeBackup(repository.exportBackup())
+        resolver.openOutputStream(uri)?.use { stream ->
+            stream.write(json.toByteArray(Charsets.UTF_8))
+        } ?: error("파일을 열 수 없습니다.")
+        _events.emit(UiEvent.Message("데이터를 내보냈습니다."))
+    }
+
+    fun importBackupReplace(resolver: android.content.ContentResolver, uri: android.net.Uri) = action("가져오기에 실패했습니다.") {
+        val json = resolver.openInputStream(uri)?.use { stream ->
+            stream.bufferedReader(Charsets.UTF_8).readText()
+        } ?: error("파일을 열 수 없습니다.")
+        repository.importReplace(json)
+        persistSelection(emptySet())
+        updateDraft("")
+        _events.emit(UiEvent.Message("백업으로 데이터를 대체했습니다."))
+    }
+
     private fun readSelection(): Set<Long> =
         savedStateHandle.get<LongArray>(KEY_SELECTION)?.toSet() ?: emptySet()
 

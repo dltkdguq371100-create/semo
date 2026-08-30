@@ -3,8 +3,10 @@ package com.semo.memo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -60,6 +62,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -102,6 +106,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.onSizeChanged
@@ -863,9 +868,25 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsScreen(vm: SemoViewModel, onTrash: () -> Unit) {
+    val context = LocalContext.current
     val compact by vm.compactCards.collectAsStateWithLifecycle()
     val deleted by vm.deletedMemos.collectAsStateWithLifecycle()
     var clearing by remember { mutableStateOf(false) }
+    var showBackupActions by remember { mutableStateOf(false) }
+    var showImportMode by remember { mutableStateOf(false) }
+    var confirmReplaceImport by remember { mutableStateOf(false) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri != null) vm.exportBackup(context.contentResolver, uri)
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) vm.importBackupReplace(context.contentResolver, uri)
+    }
+
     Scaffold(
         containerColor = AppBackground,
         topBar = { CenterAlignedTopAppBar(
@@ -893,11 +914,83 @@ private fun SettingsScreen(vm: SemoViewModel, onTrash: () -> Unit) {
                     onClick = onTrash,
                 )
             }
-            item { SettingCard(Icons.Default.Archive, "데이터 내보내기·가져오기", "2차 단계에서 파일 백업으로 제공", trailing = { Text("준비 중", color = SecondaryText) }) }
+            item {
+                SettingCard(
+                    Icons.Default.Archive,
+                    "데이터 내보내기·가져오기",
+                    "JSON 파일로 백업하거나 전체 대체로 복원",
+                    onClick = { showBackupActions = true },
+                )
+            }
             item { SettingCard(Icons.Default.Delete, "전체 데이터 삭제", "모든 메모와 묶음을 영구 삭제", onClick = { clearing = true }) }
             item { SectionLabel("앱 정보") }
             item { SettingCard(Icons.Default.Info, "세모", "채팅형 개인 메모 · 오프라인 전용", trailing = { Text("1.0.0") }) }
         }
+    }
+    if (showBackupActions) {
+        AlertDialog(
+            onDismissRequest = { showBackupActions = false },
+            title = { Text("데이터 내보내기·가져오기") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("저장소 권한 없이 시스템 파일 선택기로 JSON을 주고받습니다.")
+                    TextButton(
+                        onClick = {
+                            showBackupActions = false
+                            val stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+                                .format(Instant.now().atZone(ZoneId.systemDefault()))
+                            exportLauncher.launch("semo-backup-$stamp.json")
+                        },
+                    ) {
+                        Icon(Icons.Default.Download, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("내보내기")
+                    }
+                    TextButton(
+                        onClick = {
+                            showBackupActions = false
+                            showImportMode = true
+                        },
+                    ) {
+                        Icon(Icons.Default.Upload, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("가져오기")
+                    }
+                }
+            },
+            confirmButton = { TextButton({ showBackupActions = false }) { Text("닫기") } },
+        )
+    }
+    if (showImportMode) {
+        AlertDialog(
+            onDismissRequest = { showImportMode = false },
+            title = { Text("가져오기 방식") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("전체 대체는 현재 데이터를 지우고 백업 내용으로 바꿉니다.")
+                    TextButton(
+                        onClick = {
+                            showImportMode = false
+                            confirmReplaceImport = true
+                        },
+                    ) { Text("전체 대체") }
+                    TextButton(
+                        onClick = { },
+                        enabled = false,
+                    ) { Text("병합 (준비 중)", color = SecondaryText) }
+                }
+            },
+            confirmButton = { TextButton({ showImportMode = false }) { Text("취소") } },
+        )
+    }
+    if (confirmReplaceImport) ConfirmDialog(
+        "전체 대체로 가져올까요?",
+        "지금 기기의 모든 메모와 묶음이 삭제되고 선택한 백업으로 대체됩니다. 이 작업은 되돌릴 수 없습니다.",
+        "가져오기",
+        { confirmReplaceImport = false },
+    ) {
+        confirmReplaceImport = false
+        importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
     }
     if (clearing) ConfirmDialog(
         "모든 데이터를 삭제할까요?",

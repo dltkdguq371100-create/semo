@@ -109,4 +109,40 @@ class SemoRepository(private val database: SemoDatabase) {
     suspend fun clearAll() = database.withTransaction {
         dao.clearRefs(); dao.clearBundles(); dao.clearMemos()
     }
+
+    suspend fun exportBackup(): SemoBackup = SemoBackup(
+        schemaVersion = BACKUP_SCHEMA_VERSION,
+        exportedAt = System.currentTimeMillis(),
+        memos = dao.allMemosSnapshot(),
+        bundles = dao.allBundlesSnapshot(),
+        refs = dao.allRefsSnapshot(),
+    )
+
+    fun encodeBackup(backup: SemoBackup): String = SemoBackupCodec.encode(backup)
+
+    /** Full replace: wipe local rows then insert the backup inside one transaction. */
+    suspend fun importReplace(json: String) {
+        val backup = SemoBackupCodec.decode(json)
+        database.withTransaction {
+            dao.clearRefs()
+            dao.clearBundles()
+            dao.clearMemos()
+            if (backup.memos.isNotEmpty()) dao.insertMemos(backup.memos)
+            if (backup.bundles.isNotEmpty()) dao.insertBundles(backup.bundles)
+            if (backup.refs.isNotEmpty()) dao.replaceRefs(backup.refs)
+            syncSqliteSequence("memos", backup.memos.maxOfOrNull { it.id } ?: 0L)
+            syncSqliteSequence("bundles", backup.bundles.maxOfOrNull { it.id } ?: 0L)
+        }
+    }
+
+    private fun syncSqliteSequence(table: String, maxId: Long) {
+        val db = database.openHelper.writableDatabase
+        db.execSQL("DELETE FROM sqlite_sequence WHERE name = ?", arrayOf(table))
+        if (maxId > 0L) {
+            db.execSQL(
+                "INSERT INTO sqlite_sequence(name, seq) VALUES (?, ?)",
+                arrayOf(table, maxId),
+            )
+        }
+    }
 }

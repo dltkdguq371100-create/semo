@@ -34,6 +34,15 @@ interface SemoDao {
     @Query("SELECT * FROM memos WHERE id = :id LIMIT 1")
     suspend fun memo(id: Long): MemoEntity?
 
+    @Query("SELECT * FROM memos ORDER BY id ASC")
+    suspend fun allMemosSnapshot(): List<MemoEntity>
+
+    @Query("SELECT * FROM bundles ORDER BY id ASC")
+    suspend fun allBundlesSnapshot(): List<BundleEntity>
+
+    @Query("SELECT * FROM bundle_memo_refs ORDER BY bundleId ASC, sortOrder ASC")
+    suspend fun allRefsSnapshot(): List<BundleMemoCrossRef>
+
     @Query("SELECT * FROM memos WHERE id IN (:ids) AND isDeleted = 0 ORDER BY createdAt ASC")
     suspend fun memos(ids: List<Long>): List<MemoEntity>
 
@@ -43,6 +52,9 @@ interface SemoDao {
     @Insert suspend fun insertMemo(memo: MemoEntity): Long
     @Insert suspend fun insertBundle(bundle: BundleEntity): Long
     @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertRefs(refs: List<BundleMemoCrossRef>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertMemos(memos: List<MemoEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertBundles(bundles: List<BundleEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun replaceRefs(refs: List<BundleMemoCrossRef>)
     @Update suspend fun updateMemo(memo: MemoEntity)
     @Update suspend fun updateBundle(bundle: BundleEntity)
 
