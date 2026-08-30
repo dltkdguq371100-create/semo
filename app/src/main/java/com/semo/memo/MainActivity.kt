@@ -100,6 +100,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
@@ -297,6 +298,12 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
     var didAutoFocus by rememberSaveable { mutableStateOf(false) }
     var composerHeight by remember { mutableIntStateOf(0) }
     val imeVisible = rememberUpdatedState(WindowInsets.ime.getBottom(density) > 0)
+    var expandedMemoIds by rememberSaveable(
+        stateSaver = Saver(
+            save = { ArrayList(it) },
+            restore = { it.toSet() },
+        ),
+    ) { mutableStateOf(emptySet()) }
 
     LaunchedEffect(state.isLoading, state.timeline.size) {
         if (!state.isLoading && !initialScrollDone && state.timeline.isNotEmpty()) {
@@ -397,6 +404,12 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
                             selected = item.memo.id in state.selectedMemoIds,
                             showTime = item.showTime,
                             modifier = Modifier.padding(top = if (item.startsGroup) 10.dp else 3.dp),
+                            expanded = item.memo.id in expandedMemoIds,
+                            onToggleExpand = {
+                                expandedMemoIds = expandedMemoIds.toMutableSet().apply {
+                                    if (!add(item.memo.id)) remove(item.memo.id)
+                                }
+                            },
                             onClick = {
                                 if (state.selectionMode) vm.toggleSelection(item.memo.id)
                                 else actionMemo = item.memo
@@ -498,7 +511,11 @@ internal fun MemoBubble(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
     showTime: Boolean = true,
+    expanded: Boolean = false,
+    onToggleExpand: () -> Unit = {},
 ) {
+    val lineCount = memo.content.count { it == '\n' } + 1
+    val canCollapse = lineCount > 8
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val maxBubbleWidth = maxWidth * .82f
         Row(
@@ -524,7 +541,24 @@ internal fun MemoBubble(
                     .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                     .padding(horizontal = 13.dp, vertical = 8.dp),
             ) {
-                Text(memo.content, color = PrimaryText, fontSize = 16.sp, lineHeight = 22.sp)
+                Column {
+                    Text(
+                        memo.content,
+                        color = PrimaryText,
+                        fontSize = 16.sp,
+                        lineHeight = 22.sp,
+                        maxLines = if (canCollapse && !expanded) 8 else Int.MAX_VALUE,
+                        overflow = if (canCollapse && !expanded) TextOverflow.Ellipsis else TextOverflow.Clip,
+                    )
+                    if (canCollapse) {
+                        Text(
+                            if (expanded) "접기" else "더보기",
+                            color = SecondaryText,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(top = 4.dp).clickable(onClick = onToggleExpand),
+                        )
+                    }
+                }
             }
         }
     }
