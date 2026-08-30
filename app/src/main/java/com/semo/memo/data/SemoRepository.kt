@@ -8,6 +8,7 @@ class SemoRepository(private val database: SemoDatabase) {
 
     val activeMemos: Flow<List<MemoEntity>> = dao.observeActiveMemos()
     val allMemos: Flow<List<MemoEntity>> = dao.observeAllMemos()
+    val deletedMemos: Flow<List<MemoEntity>> = dao.observeDeletedMemos()
     val activeBundles: Flow<List<BundleWithMemos>> = dao.observeActiveBundles()
     val allBundles: Flow<List<BundleWithMemos>> = dao.observeAllBundles()
 
@@ -33,6 +34,19 @@ class SemoRepository(private val database: SemoDatabase) {
             dao.updateMemo(it.copy(isDeleted = true, updatedAt = System.currentTimeMillis()))
         }
         linked
+    }
+
+    /** Restores a soft-deleted memo. Bundle links removed at delete time are not recreated. */
+    suspend fun restoreMemo(id: Long) {
+        dao.memo(id)?.let {
+            require(it.isDeleted) { "휴지통에 없는 메모입니다." }
+            dao.updateMemo(it.copy(isDeleted = false, updatedAt = System.currentTimeMillis()))
+        }
+    }
+
+    suspend fun permanentlyDeleteMemo(id: Long) = database.withTransaction {
+        dao.deleteRefsForMemo(id)
+        dao.permanentlyDeleteMemo(id)
     }
 
     suspend fun createBundle(memoIds: Set<Long>): Long = database.withTransaction {

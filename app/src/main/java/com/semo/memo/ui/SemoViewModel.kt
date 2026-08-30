@@ -80,6 +80,7 @@ class SemoViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SemoUiState())
 
     val allMemos = repository.allMemos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val deletedMemos = repository.deletedMemos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val allBundles = repository.allBundles.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val compactCards = preferences.compactCards.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
@@ -99,7 +100,17 @@ class SemoViewModel(
 
     fun deleteMemo(id: Long) = action("메모를 삭제하지 못했습니다.") {
         val wasLinked = repository.deleteMemo(id)
-        _events.emit(UiEvent.Message(if (wasLinked) "묶음 연결과 원본 메모를 삭제했습니다." else "메모를 삭제했습니다."))
+        _events.emit(UiEvent.Message(if (wasLinked) "묶음 연결과 원본 메모를 휴지통으로 옮겼습니다." else "메모를 휴지통으로 옮겼습니다."))
+    }
+
+    fun restoreMemo(id: Long) = action("메모를 복원하지 못했습니다.") {
+        repository.restoreMemo(id)
+        _events.emit(UiEvent.Message("메모를 복원했습니다. 이전 묶음 연결은 되살아나지 않습니다."))
+    }
+
+    fun permanentlyDeleteMemo(id: Long) = action("메모를 영구 삭제하지 못했습니다.") {
+        repository.permanentlyDeleteMemo(id)
+        _events.emit(UiEvent.Message("메모를 영구 삭제했습니다."))
     }
 
     fun toggleSelection(id: Long) {

@@ -182,6 +182,7 @@ private object Route {
     const val Bundles = "bundles"
     const val Settings = "settings"
     const val Search = "search"
+    const val Trash = "trash"
     const val Detail = "bundle/{id}"
     fun detail(id: Long) = "bundle/$id"
 }
@@ -228,8 +229,9 @@ private fun SemoApp(vm: SemoViewModel) {
                 TimelineScreen(vm, onSearch = { nav.navigate(Route.Search) }, onBundle = { nav.navigate(Route.detail(it)) })
             }
             composable(Route.Bundles) { BundleListScreen(vm, onBundle = { nav.navigate(Route.detail(it)) }) }
-            composable(Route.Settings) { SettingsScreen(vm) }
+            composable(Route.Settings) { SettingsScreen(vm, onTrash = { nav.navigate(Route.Trash) }) }
             composable(Route.Search) { SearchScreen(vm, onBack = nav::popBackStack, onBundle = { nav.navigate(Route.detail(it)) }) }
+            composable(Route.Trash) { TrashScreen(vm, onBack = nav::popBackStack) }
             composable(Route.Detail, arguments = listOf(navArgument("id") { type = NavType.LongType })) { backStack ->
                 BundleDetailScreen(vm, backStack.arguments?.getLong("id") ?: 0, nav::popBackStack)
             }
@@ -384,7 +386,7 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
     editing?.let { memo -> EditMemoDialog(memo, onDismiss = { editing = null }) { vm.updateMemo(memo.id, it); editing = null } }
     deleting?.let { memo -> ConfirmDialog(
         title = "메모를 삭제할까요?",
-        body = "묶음에 포함된 메모라면 연결에서도 제거됩니다. 묶음의 편집 내용은 바뀌지 않습니다.",
+        body = "휴지통으로 이동합니다. 묶음에 포함된 메모라면 연결에서도 제거되며, 복원해도 묶음 연결은 되살아나지 않습니다.",
         confirm = "삭제",
         onDismiss = { deleting = null },
     ) { vm.deleteMemo(memo.id); deleting = null } }
@@ -860,8 +862,9 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsScreen(vm: SemoViewModel) {
+private fun SettingsScreen(vm: SemoViewModel, onTrash: () -> Unit) {
     val compact by vm.compactCards.collectAsStateWithLifecycle()
+    val deleted by vm.deletedMemos.collectAsStateWithLifecycle()
     var clearing by remember { mutableStateOf(false) }
     Scaffold(
         containerColor = AppBackground,
@@ -876,6 +879,20 @@ private fun SettingsScreen(vm: SemoViewModel) {
             item { SettingCard(Icons.Default.Info, "밝은 테마", "차분한 화이트와 무채색", trailing = { Text("기본") }) }
             item { SettingCard(Icons.Default.Folder, "간결한 묶음 카드", "묶음 목록을 더 촘촘하게 표시", trailing = { Switch(compact, { vm.setCompactCards(it) }) }) }
             item { SectionLabel("데이터") }
+            item {
+                SettingCard(
+                    Icons.Default.Delete,
+                    "휴지통",
+                    "삭제한 메모를 복원하거나 영구 삭제",
+                    trailing = {
+                        Text(
+                            if (deleted.isEmpty()) "비어 있음" else "${deleted.size}개",
+                            color = SecondaryText,
+                        )
+                    },
+                    onClick = onTrash,
+                )
+            }
             item { SettingCard(Icons.Default.Archive, "데이터 내보내기·가져오기", "2차 단계에서 파일 백업으로 제공", trailing = { Text("준비 중", color = SecondaryText) }) }
             item { SettingCard(Icons.Default.Delete, "전체 데이터 삭제", "모든 메모와 묶음을 영구 삭제", onClick = { clearing = true }) }
             item { SectionLabel("앱 정보") }
@@ -888,6 +905,75 @@ private fun SettingsScreen(vm: SemoViewModel) {
         "전체 삭제",
         { clearing = false },
     ) { vm.clearAll(); clearing = false }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TrashScreen(vm: SemoViewModel, onBack: () -> Unit) {
+    val deleted by vm.deletedMemos.collectAsStateWithLifecycle()
+    var restoring by remember { mutableStateOf<MemoEntity?>(null) }
+    var purging by remember { mutableStateOf<MemoEntity?>(null) }
+    Scaffold(
+        containerColor = AppBackground,
+        topBar = {
+            CenterAlignedTopAppBar(
+                modifier = Modifier.statusBarsPadding(),
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = AppBackground),
+                navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로가기") } },
+                title = { Text("휴지통", fontWeight = FontWeight.Bold) },
+            )
+        },
+    ) { padding ->
+        if (deleted.isEmpty()) {
+            EmptyState(
+                "휴지통이 비어 있습니다",
+                "삭제한 메모가 여기에 모입니다. 복원해도 이전 묶음 연결은 되살아나지 않습니다.",
+                Modifier.padding(padding),
+            )
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                item {
+                    Text(
+                        "복원해도 삭제 전에 있던 묶음 연결은 되살아나지 않습니다.",
+                        color = SecondaryText,
+                        fontSize = 12.sp,
+                    )
+                }
+                items(deleted, key = { it.id }) { memo ->
+                    Card(colors = CardDefaults.cardColors(containerColor = AppSurface), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(memo.content)
+                            Text(formatDateTime(memo.updatedAt), color = SecondaryText, fontSize = 11.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton({ restoring = memo }) { Text("복원") }
+                                TextButton({ purging = memo }) { Text("영구 삭제", color = Color(0xFFB3261E)) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    restoring?.let { memo ->
+        ConfirmDialog(
+            "메모를 복원할까요?",
+            "타임라인으로 돌아갑니다. 삭제 전에 연결되어 있던 묶음에는 다시 들어가지 않습니다.",
+            "복원",
+            { restoring = null },
+        ) { vm.restoreMemo(memo.id); restoring = null }
+    }
+    purging?.let { memo ->
+        ConfirmDialog(
+            "메모를 영구 삭제할까요?",
+            "이 작업은 되돌릴 수 없습니다.",
+            "영구 삭제",
+            { purging = null },
+        ) { vm.permanentlyDeleteMemo(memo.id); purging = null }
+    }
 }
 
 @Composable

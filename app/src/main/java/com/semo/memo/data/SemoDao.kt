@@ -16,6 +16,9 @@ interface SemoDao {
     @Query("SELECT * FROM memos WHERE isDeleted = 0 ORDER BY createdAt DESC")
     fun observeAllMemos(): Flow<List<MemoEntity>>
 
+    @Query("SELECT * FROM memos WHERE isDeleted = 1 ORDER BY updatedAt DESC")
+    fun observeDeletedMemos(): Flow<List<MemoEntity>>
+
     @Transaction
     @Query("SELECT * FROM bundles WHERE isArchived = 0 ORDER BY isPinned DESC, updatedAt DESC, createdAt DESC")
     fun observeActiveBundles(): Flow<List<BundleWithMemos>>
@@ -60,6 +63,9 @@ interface SemoDao {
 
     @Query("DELETE FROM bundle_memo_refs WHERE memoId = :memoId")
     suspend fun deleteRefsForMemo(memoId: Long)
+
+    @Query("DELETE FROM memos WHERE id = :id")
+    suspend fun permanentlyDeleteMemo(id: Long)
 
     @Query("DELETE FROM bundle_memo_refs") suspend fun clearRefs()
     @Query("DELETE FROM bundles") suspend fun clearBundles()
