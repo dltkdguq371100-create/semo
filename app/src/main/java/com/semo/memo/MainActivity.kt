@@ -296,6 +296,7 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
     var initialScrollDone by rememberSaveable { mutableStateOf(false) }
     var didAutoFocus by rememberSaveable { mutableStateOf(false) }
     var composerHeight by remember { mutableIntStateOf(0) }
+    val imeVisible = rememberUpdatedState(WindowInsets.ime.getBottom(density) > 0)
 
     LaunchedEffect(state.isLoading, state.timeline.size) {
         if (!state.isLoading && !initialScrollDone && state.timeline.isNotEmpty()) {
@@ -318,11 +319,11 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
         keyboard?.show()
         didAutoFocus = true
     }
-    LaunchedEffect(listState, density) {
-        snapshotFlow { WindowInsets.ime.getBottom(density) > 0 }
+    LaunchedEffect(listState) {
+        snapshotFlow { imeVisible.value }
             .distinctUntilChanged()
-            .collect { imeVisible ->
-                if (!imeVisible) return@collect
+            .collect { visible ->
+                if (!visible) return@collect
                 val layout = listState.layoutInfo
                 val nearLatest = layout.visibleItemsInfo.lastOrNull()?.index
                     ?.let { it >= layout.totalItemsCount - 2 } == true
