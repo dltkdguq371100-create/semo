@@ -405,15 +405,6 @@ internal fun MemoComposer(
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        IconButton(onClick = {}, enabled = false, modifier = Modifier.size(48.dp)) {
-            Box(
-                Modifier.size(46.dp).clip(CircleShape).background(AppSurface)
-                    .border(1.dp, AppBorder, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Default.Add, "추가", tint = InactiveIcon, modifier = Modifier.size(23.dp))
-            }
-        }
         BasicTextField(
             value = text,
             onValueChange = onText,
