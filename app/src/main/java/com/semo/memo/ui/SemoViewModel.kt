@@ -116,11 +116,22 @@ class SemoViewModel(
         repository.updateBundleTitle(id, title)
     }
 
-    private var contentSaveJob: Job? = null
+    private val contentSaveJobs = mutableMapOf<Long, Job>()
+
     fun updateBundleContentDebounced(id: Long, content: String) {
-        contentSaveJob?.cancel()
-        contentSaveJob = viewModelScope.launch {
+        contentSaveJobs[id]?.cancel()
+        val job = viewModelScope.launch {
             delay(450)
+            runCatching { repository.updateBundleContent(id, content) }
+                .onFailure { events.emit(UiEvent.Message("편집 내용을 저장하지 못했습니다.")) }
+        }
+        job.invokeOnCompletion { contentSaveJobs.remove(id, job) }
+        contentSaveJobs[id] = job
+    }
+
+    fun flushBundleContent(id: Long, content: String) {
+        contentSaveJobs.remove(id)?.cancel()
+        viewModelScope.launch {
             runCatching { repository.updateBundleContent(id, content) }
                 .onFailure { events.emit(UiEvent.Message("편집 내용을 저장하지 못했습니다.")) }
         }

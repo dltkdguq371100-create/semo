@@ -83,7 +83,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -758,11 +760,19 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
     var adding by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     val value = bundle
+    val latestContent = rememberUpdatedState(content)
 
     LaunchedEffect(value?.bundle?.id) {
         val loaded = value ?: return@LaunchedEffect
         if (title == null) title = loaded.bundle.title.orEmpty()
         if (content == null) content = loaded.bundle.editableContent
+    }
+
+    DisposableEffect(id) {
+        onDispose {
+            val pending = latestContent.value
+            if (pending != null) vm.flushBundleContent(id, pending)
+        }
     }
 
     Scaffold(
