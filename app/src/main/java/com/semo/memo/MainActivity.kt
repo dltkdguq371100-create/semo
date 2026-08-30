@@ -2,8 +2,11 @@ package com.semo.memo
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -59,6 +62,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -83,7 +88,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -99,6 +106,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.onSizeChanged
@@ -159,7 +167,17 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // App UI is always light; keep dark system-bar icons even when the device is in dark mode.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT,
+            ),
+            navigationBarStyle = SystemBarStyle.light(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT,
+            ),
+        )
         setContent { SemoTheme { SemoApp(viewModel) } }
     }
 }
@@ -169,6 +187,7 @@ private object Route {
     const val Bundles = "bundles"
     const val Settings = "settings"
     const val Search = "search"
+    const val Trash = "trash"
     const val Detail = "bundle/{id}"
     fun detail(id: Long) = "bundle/$id"
 }
@@ -215,8 +234,9 @@ private fun SemoApp(vm: SemoViewModel) {
                 TimelineScreen(vm, onSearch = { nav.navigate(Route.Search) }, onBundle = { nav.navigate(Route.detail(it)) })
             }
             composable(Route.Bundles) { BundleListScreen(vm, onBundle = { nav.navigate(Route.detail(it)) }) }
-            composable(Route.Settings) { SettingsScreen(vm) }
+            composable(Route.Settings) { SettingsScreen(vm, onTrash = { nav.navigate(Route.Trash) }) }
             composable(Route.Search) { SearchScreen(vm, onBack = nav::popBackStack, onBundle = { nav.navigate(Route.detail(it)) }) }
+            composable(Route.Trash) { TrashScreen(vm, onBack = nav::popBackStack) }
             composable(Route.Detail, arguments = listOf(navArgument("id") { type = NavType.LongType })) { backStack ->
                 BundleDetailScreen(vm, backStack.arguments?.getLong("id") ?: 0, nav::popBackStack)
             }
@@ -256,7 +276,7 @@ private fun BottomNav(current: String?, onNavigate: (String) -> Unit) {
 @Composable
 private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (Long) -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
-    var draft by rememberSaveable { mutableStateOf(vm.draft) }
+    val draft by vm.draft.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<MemoEntity?>(null) }
     var deleting by remember { mutableStateOf<MemoEntity?>(null) }
     var actionMemo by remember { mutableStateOf<MemoEntity?>(null) }
@@ -312,10 +332,8 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
         bottomBar = {
             if (!state.selectionMode) MemoComposer(
                 text = draft,
-                onText = { draft = it; vm.draft = it },
-                onSend = {
-                    vm.sendMemo(draft) { draft = "" }
-                },
+                onText = vm::updateDraft,
+                onSend = { vm.sendMemo(draft) },
                 onHeightChanged = { height ->
                     if (composerHeight > 0 && height > composerHeight && state.timeline.isNotEmpty()) {
                         val layout = listState.layoutInfo
@@ -373,7 +391,7 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
     editing?.let { memo -> EditMemoDialog(memo, onDismiss = { editing = null }) { vm.updateMemo(memo.id, it); editing = null } }
     deleting?.let { memo -> ConfirmDialog(
         title = "메모를 삭제할까요?",
-        body = "묶음에 포함된 메모라면 연결에서도 제거됩니다. 묶음의 편집 내용은 바뀌지 않습니다.",
+        body = "휴지통으로 이동합니다. 묶음에 포함된 메모라면 연결에서도 제거되며, 복원해도 묶음 연결은 되살아나지 않습니다.",
         confirm = "삭제",
         onDismiss = { deleting = null },
     ) { vm.deleteMemo(memo.id); deleting = null } }
@@ -392,20 +410,11 @@ internal fun MemoComposer(
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        IconButton(onClick = {}, enabled = false, modifier = Modifier.size(48.dp)) {
-            Box(
-                Modifier.size(46.dp).clip(CircleShape).background(AppSurface)
-                    .border(1.dp, AppBorder, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Default.Add, "추가", tint = InactiveIcon, modifier = Modifier.size(23.dp))
-            }
-        }
         BasicTextField(
             value = text,
             onValueChange = onText,
             modifier = Modifier.weight(1f)
-                .heightIn(min = 48.dp, max = 108.dp)
+                .heightIn(min = 48.dp, max = 136.dp)
                 .clip(RoundedCornerShape(24.dp))
                 .background(AppSurface)
                 .border(1.dp, AppBorder, RoundedCornerShape(24.dp))
@@ -589,6 +598,8 @@ private fun BundleListScreen(vm: SemoViewModel, onBundle: (Long) -> Unit) {
     val compact by vm.compactCards.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf(BundleFilter.ALL) }
+    // TODO: If memo/bundle counts grow into the thousands, replace in-memory filtering
+    // with a Room FTS4 virtual table (and matching DAO queries) for title/content search.
     val visible = bundles.filter { value ->
         val matchesFilter = when (filter) {
             BundleFilter.ALL -> !value.bundle.isArchived
@@ -703,6 +714,8 @@ private fun SearchScreen(vm: SemoViewModel, onBack: () -> Unit, onBundle: (Long)
     val bundles by vm.allBundles.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     val requester = remember { FocusRequester() }
+    // TODO: If memo/bundle counts grow into the thousands, replace in-memory filtering
+    // with a Room FTS4 virtual table (and matching DAO queries) for title/content search.
     val memoResults = remember(query, memos) { if (query.isBlank()) emptyList() else memos.filter { !it.isDeleted && it.content.contains(query, true) } }
     val bundleResults = remember(query, bundles) { if (query.isBlank()) emptyList() else bundles.filter {
         it.bundle.title.orEmpty().contains(query, true) || it.bundle.editableContent.contains(query, true) || it.memos.any { memo -> memo.content.contains(query, true) }
@@ -758,10 +771,22 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
     var adding by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     val value = bundle
+    val latestTitle = rememberUpdatedState(title)
+    val latestContent = rememberUpdatedState(content)
 
     LaunchedEffect(value?.bundle?.id) {
-        if (title == null) title = value?.bundle?.title.orEmpty()
-        if (content == null) content = value?.bundle?.editableContent.orEmpty()
+        val loaded = value ?: return@LaunchedEffect
+        if (title == null) title = loaded.bundle.title.orEmpty()
+        if (content == null) content = loaded.bundle.editableContent
+    }
+
+    DisposableEffect(id) {
+        onDispose {
+            val pendingTitle = latestTitle.value
+            if (pendingTitle != null) vm.flushBundleTitle(id, pendingTitle)
+            val pendingContent = latestContent.value
+            if (pendingContent != null) vm.flushBundleContent(id, pendingContent)
+        }
     }
 
     Scaffold(
@@ -794,7 +819,7 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
             item {
                 OutlinedTextField(
                     value = title.orEmpty(),
-                    onValueChange = { title = it; vm.updateBundleTitle(id, it) },
+                    onValueChange = { title = it; vm.updateBundleTitleDebounced(id, it) },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("제목 (선택)") },
                     placeholder = { Text(value.displayTitle()) },
@@ -846,9 +871,26 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SettingsScreen(vm: SemoViewModel) {
+private fun SettingsScreen(vm: SemoViewModel, onTrash: () -> Unit) {
+    val context = LocalContext.current
     val compact by vm.compactCards.collectAsStateWithLifecycle()
+    val deleted by vm.deletedMemos.collectAsStateWithLifecycle()
     var clearing by remember { mutableStateOf(false) }
+    var showBackupActions by remember { mutableStateOf(false) }
+    var showImportMode by remember { mutableStateOf(false) }
+    var confirmReplaceImport by remember { mutableStateOf(false) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri != null) vm.exportBackup(context.contentResolver, uri)
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) vm.importBackupReplace(context.contentResolver, uri)
+    }
+
     Scaffold(
         containerColor = AppBackground,
         topBar = { CenterAlignedTopAppBar(
@@ -862,11 +904,97 @@ private fun SettingsScreen(vm: SemoViewModel) {
             item { SettingCard(Icons.Default.Info, "밝은 테마", "차분한 화이트와 무채색", trailing = { Text("기본") }) }
             item { SettingCard(Icons.Default.Folder, "간결한 묶음 카드", "묶음 목록을 더 촘촘하게 표시", trailing = { Switch(compact, { vm.setCompactCards(it) }) }) }
             item { SectionLabel("데이터") }
-            item { SettingCard(Icons.Default.Archive, "데이터 내보내기·가져오기", "2차 단계에서 파일 백업으로 제공", trailing = { Text("준비 중", color = SecondaryText) }) }
+            item {
+                SettingCard(
+                    Icons.Default.Delete,
+                    "휴지통",
+                    "삭제한 메모를 복원하거나 영구 삭제",
+                    trailing = {
+                        Text(
+                            if (deleted.isEmpty()) "비어 있음" else "${deleted.size}개",
+                            color = SecondaryText,
+                        )
+                    },
+                    onClick = onTrash,
+                )
+            }
+            item {
+                SettingCard(
+                    Icons.Default.Archive,
+                    "데이터 내보내기·가져오기",
+                    "JSON 파일로 백업하거나 전체 대체로 복원",
+                    onClick = { showBackupActions = true },
+                )
+            }
             item { SettingCard(Icons.Default.Delete, "전체 데이터 삭제", "모든 메모와 묶음을 영구 삭제", onClick = { clearing = true }) }
             item { SectionLabel("앱 정보") }
             item { SettingCard(Icons.Default.Info, "세모", "채팅형 개인 메모 · 오프라인 전용", trailing = { Text("1.0.0") }) }
         }
+    }
+    if (showBackupActions) {
+        AlertDialog(
+            onDismissRequest = { showBackupActions = false },
+            title = { Text("데이터 내보내기·가져오기") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("저장소 권한 없이 시스템 파일 선택기로 JSON을 주고받습니다.")
+                    TextButton(
+                        onClick = {
+                            showBackupActions = false
+                            val stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+                                .format(Instant.now().atZone(ZoneId.systemDefault()))
+                            exportLauncher.launch("semo-backup-$stamp.json")
+                        },
+                    ) {
+                        Icon(Icons.Default.Download, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("내보내기")
+                    }
+                    TextButton(
+                        onClick = {
+                            showBackupActions = false
+                            showImportMode = true
+                        },
+                    ) {
+                        Icon(Icons.Default.Upload, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("가져오기")
+                    }
+                }
+            },
+            confirmButton = { TextButton({ showBackupActions = false }) { Text("닫기") } },
+        )
+    }
+    if (showImportMode) {
+        AlertDialog(
+            onDismissRequest = { showImportMode = false },
+            title = { Text("가져오기 방식") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("전체 대체는 현재 데이터를 지우고 백업 내용으로 바꿉니다.")
+                    TextButton(
+                        onClick = {
+                            showImportMode = false
+                            confirmReplaceImport = true
+                        },
+                    ) { Text("전체 대체") }
+                    TextButton(
+                        onClick = { },
+                        enabled = false,
+                    ) { Text("병합 (준비 중)", color = SecondaryText) }
+                }
+            },
+            confirmButton = { TextButton({ showImportMode = false }) { Text("취소") } },
+        )
+    }
+    if (confirmReplaceImport) ConfirmDialog(
+        "전체 대체로 가져올까요?",
+        "지금 기기의 모든 메모와 묶음이 삭제되고 선택한 백업으로 대체됩니다. 이 작업은 되돌릴 수 없습니다.",
+        "가져오기",
+        { confirmReplaceImport = false },
+    ) {
+        confirmReplaceImport = false
+        importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
     }
     if (clearing) ConfirmDialog(
         "모든 데이터를 삭제할까요?",
@@ -874,6 +1002,75 @@ private fun SettingsScreen(vm: SemoViewModel) {
         "전체 삭제",
         { clearing = false },
     ) { vm.clearAll(); clearing = false }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TrashScreen(vm: SemoViewModel, onBack: () -> Unit) {
+    val deleted by vm.deletedMemos.collectAsStateWithLifecycle()
+    var restoring by remember { mutableStateOf<MemoEntity?>(null) }
+    var purging by remember { mutableStateOf<MemoEntity?>(null) }
+    Scaffold(
+        containerColor = AppBackground,
+        topBar = {
+            CenterAlignedTopAppBar(
+                modifier = Modifier.statusBarsPadding(),
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = AppBackground),
+                navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로가기") } },
+                title = { Text("휴지통", fontWeight = FontWeight.Bold) },
+            )
+        },
+    ) { padding ->
+        if (deleted.isEmpty()) {
+            EmptyState(
+                "휴지통이 비어 있습니다",
+                "삭제한 메모가 여기에 모입니다. 복원해도 이전 묶음 연결은 되살아나지 않습니다.",
+                Modifier.padding(padding),
+            )
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                item {
+                    Text(
+                        "복원해도 삭제 전에 있던 묶음 연결은 되살아나지 않습니다.",
+                        color = SecondaryText,
+                        fontSize = 12.sp,
+                    )
+                }
+                items(deleted, key = { it.id }) { memo ->
+                    Card(colors = CardDefaults.cardColors(containerColor = AppSurface), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(memo.content)
+                            Text(formatDateTime(memo.updatedAt), color = SecondaryText, fontSize = 11.sp)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton({ restoring = memo }) { Text("복원") }
+                                TextButton({ purging = memo }) { Text("영구 삭제", color = Color(0xFFB3261E)) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    restoring?.let { memo ->
+        ConfirmDialog(
+            "메모를 복원할까요?",
+            "타임라인으로 돌아갑니다. 삭제 전에 연결되어 있던 묶음에는 다시 들어가지 않습니다.",
+            "복원",
+            { restoring = null },
+        ) { vm.restoreMemo(memo.id); restoring = null }
+    }
+    purging?.let { memo ->
+        ConfirmDialog(
+            "메모를 영구 삭제할까요?",
+            "이 작업은 되돌릴 수 없습니다.",
+            "영구 삭제",
+            { purging = null },
+        ) { vm.permanentlyDeleteMemo(memo.id); purging = null }
+    }
 }
 
 @Composable

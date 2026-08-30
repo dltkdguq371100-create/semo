@@ -8,6 +8,7 @@ class SemoRepository(private val database: SemoDatabase) {
 
     val activeMemos: Flow<List<MemoEntity>> = dao.observeActiveMemos()
     val allMemos: Flow<List<MemoEntity>> = dao.observeAllMemos()
+    val deletedMemos: Flow<List<MemoEntity>> = dao.observeDeletedMemos()
     val activeBundles: Flow<List<BundleWithMemos>> = dao.observeActiveBundles()
     val allBundles: Flow<List<BundleWithMemos>> = dao.observeAllBundles()
 
@@ -33,6 +34,19 @@ class SemoRepository(private val database: SemoDatabase) {
             dao.updateMemo(it.copy(isDeleted = true, updatedAt = System.currentTimeMillis()))
         }
         linked
+    }
+
+    /** Restores a soft-deleted memo. Bundle links removed at delete time are not recreated. */
+    suspend fun restoreMemo(id: Long) {
+        dao.memo(id)?.let {
+            require(it.isDeleted) { "휴지통에 없는 메모입니다." }
+            dao.updateMemo(it.copy(isDeleted = false, updatedAt = System.currentTimeMillis()))
+        }
+    }
+
+    suspend fun permanentlyDeleteMemo(id: Long) = database.withTransaction {
+        dao.deleteRefsForMemo(id)
+        dao.permanentlyDeleteMemo(id)
     }
 
     suspend fun createBundle(memoIds: Set<Long>): Long = database.withTransaction {
@@ -74,8 +88,10 @@ class SemoRepository(private val database: SemoDatabase) {
     suspend fun addMemos(bundleId: Long, memoIds: Set<Long>) = database.withTransaction {
         val now = System.currentTimeMillis()
         val source = dao.memos(memoIds.toList())
-        dao.insertRefs(source.mapIndexed { index, memo ->
-            BundleMemoCrossRef(bundleId, memo.id, now, now + index)
+        // Keep sortOrder on the same 0,1,2… scale as createBundle (not epoch millis).
+        var nextOrder = (dao.maxSortOrder(bundleId) ?: -1L) + 1L
+        dao.insertRefs(source.map { memo ->
+            BundleMemoCrossRef(bundleId, memo.id, now, nextOrder++)
         })
         dao.bundle(bundleId)?.let { dao.updateBundle(it.copy(updatedAt = now)) }
     }
@@ -92,5 +108,41 @@ class SemoRepository(private val database: SemoDatabase) {
 
     suspend fun clearAll() = database.withTransaction {
         dao.clearRefs(); dao.clearBundles(); dao.clearMemos()
+    }
+
+    suspend fun exportBackup(): SemoBackup = SemoBackup(
+        schemaVersion = BACKUP_SCHEMA_VERSION,
+        exportedAt = System.currentTimeMillis(),
+        memos = dao.allMemosSnapshot(),
+        bundles = dao.allBundlesSnapshot(),
+        refs = dao.allRefsSnapshot(),
+    )
+
+    fun encodeBackup(backup: SemoBackup): String = SemoBackupCodec.encode(backup)
+
+    /** Full replace: wipe local rows then insert the backup inside one transaction. */
+    suspend fun importReplace(json: String) {
+        val backup = SemoBackupCodec.decode(json)
+        database.withTransaction {
+            dao.clearRefs()
+            dao.clearBundles()
+            dao.clearMemos()
+            if (backup.memos.isNotEmpty()) dao.insertMemos(backup.memos)
+            if (backup.bundles.isNotEmpty()) dao.insertBundles(backup.bundles)
+            if (backup.refs.isNotEmpty()) dao.replaceRefs(backup.refs)
+            syncSqliteSequence("memos", backup.memos.maxOfOrNull { it.id } ?: 0L)
+            syncSqliteSequence("bundles", backup.bundles.maxOfOrNull { it.id } ?: 0L)
+        }
+    }
+
+    private fun syncSqliteSequence(table: String, maxId: Long) {
+        val db = database.openHelper.writableDatabase
+        db.execSQL("DELETE FROM sqlite_sequence WHERE name = ?", arrayOf<Any>(table))
+        if (maxId > 0L) {
+            db.execSQL(
+                "INSERT INTO sqlite_sequence(name, seq) VALUES (?, ?)",
+                arrayOf<Any>(table, maxId),
+            )
+        }
     }
 }

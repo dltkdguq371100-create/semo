@@ -14,7 +14,6 @@ data class MemoEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val isDeleted: Boolean = false,
-    val isArchived: Boolean = false,
 )
 
 @Entity(tableName = "bundles")
