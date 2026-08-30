@@ -416,9 +416,9 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
         MemoActionSheet(
             memo = memo,
             onDismiss = { actionMemo = null },
-            onCopied = vm::notifyCopied,
             onEdit = { actionMemo = null; editing = memo },
             onDelete = { actionMemo = null; deleting = memo },
+            onCopied = vm::notifyCopied,
         )
     }
     editing?.let { memo -> EditMemoDialog(memo, onDismiss = { editing = null }) { vm.updateMemo(memo.id, it); editing = null } }
@@ -534,9 +534,9 @@ internal fun MemoBubble(
 internal fun MemoActionSheet(
     memo: MemoEntity,
     onDismiss: () -> Unit,
-    onCopied: () -> Unit = {},
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onCopied: () -> Unit = {},
 ) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
