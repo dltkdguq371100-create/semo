@@ -771,6 +771,7 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
     var adding by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     val value = bundle
+    val latestTitle = rememberUpdatedState(title)
     val latestContent = rememberUpdatedState(content)
 
     LaunchedEffect(value?.bundle?.id) {
@@ -781,8 +782,10 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
 
     DisposableEffect(id) {
         onDispose {
-            val pending = latestContent.value
-            if (pending != null) vm.flushBundleContent(id, pending)
+            val pendingTitle = latestTitle.value
+            if (pendingTitle != null) vm.flushBundleTitle(id, pendingTitle)
+            val pendingContent = latestContent.value
+            if (pendingContent != null) vm.flushBundleContent(id, pendingContent)
         }
     }
 
@@ -816,7 +819,7 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
             item {
                 OutlinedTextField(
                     value = title.orEmpty(),
-                    onValueChange = { title = it; vm.updateBundleTitle(id, it) },
+                    onValueChange = { title = it; vm.updateBundleTitleDebounced(id, it) },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("제목 (선택)") },
                     placeholder = { Text(value.displayTitle()) },

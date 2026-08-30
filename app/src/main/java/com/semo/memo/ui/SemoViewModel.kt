@@ -116,7 +116,27 @@ class SemoViewModel(
         repository.updateBundleTitle(id, title)
     }
 
+    private val titleSaveJobs = mutableMapOf<Long, Job>()
     private val contentSaveJobs = mutableMapOf<Long, Job>()
+
+    fun updateBundleTitleDebounced(id: Long, title: String) {
+        titleSaveJobs[id]?.cancel()
+        val job = viewModelScope.launch {
+            delay(450)
+            runCatching { repository.updateBundleTitle(id, title) }
+                .onFailure { events.emit(UiEvent.Message("제목을 저장하지 못했습니다.")) }
+        }
+        job.invokeOnCompletion { titleSaveJobs.remove(id, job) }
+        titleSaveJobs[id] = job
+    }
+
+    fun flushBundleTitle(id: Long, title: String) {
+        titleSaveJobs.remove(id)?.cancel()
+        viewModelScope.launch {
+            runCatching { repository.updateBundleTitle(id, title) }
+                .onFailure { events.emit(UiEvent.Message("제목을 저장하지 못했습니다.")) }
+        }
+    }
 
     fun updateBundleContentDebounced(id: Long, content: String) {
         contentSaveJobs[id]?.cancel()
