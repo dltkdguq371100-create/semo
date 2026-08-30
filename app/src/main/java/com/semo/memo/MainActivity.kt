@@ -106,8 +106,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.contentDescription
@@ -282,7 +284,10 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
     var actionMemo by remember { mutableStateOf<MemoEntity?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val composerRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
     var initialScrollDone by rememberSaveable { mutableStateOf(false) }
+    var didAutoFocus by rememberSaveable { mutableStateOf(false) }
     var composerHeight by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(state.isLoading, state.timeline.size) {
@@ -299,6 +304,12 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
             withFrameNanos { }
             listState.animateScrollToItem(targetIndex)
         }
+    }
+    LaunchedEffect(state.selectionMode, didAutoFocus) {
+        if (didAutoFocus || state.selectionMode) return@LaunchedEffect
+        composerRequester.requestFocus()
+        keyboard?.show()
+        didAutoFocus = true
     }
 
     Scaffold(
@@ -343,6 +354,7 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
                     }
                     composerHeight = height
                 },
+                focusRequester = composerRequester,
             )
         },
     ) { padding ->
@@ -403,6 +415,7 @@ internal fun MemoComposer(
     onText: (String) -> Unit,
     onSend: () -> Unit,
     onHeightChanged: (Int) -> Unit = {},
+    focusRequester: FocusRequester? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().background(AppSurface).onSizeChanged { onHeightChanged(it.height) }
@@ -414,6 +427,7 @@ internal fun MemoComposer(
             value = text,
             onValueChange = onText,
             modifier = Modifier.weight(1f)
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
                 .heightIn(min = 48.dp, max = 136.dp)
                 .clip(RoundedCornerShape(24.dp))
                 .background(AppSurface)
