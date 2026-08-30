@@ -106,7 +106,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -152,6 +151,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -284,6 +284,7 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
     var actionMemo by remember { mutableStateOf<MemoEntity?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
     val composerRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     var initialScrollDone by rememberSaveable { mutableStateOf(false) }
@@ -310,6 +311,19 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
         composerRequester.requestFocus()
         keyboard?.show()
         didAutoFocus = true
+    }
+    LaunchedEffect(listState, density) {
+        snapshotFlow { WindowInsets.ime.getBottom(density) > 0 }
+            .distinctUntilChanged()
+            .collect { imeVisible ->
+                if (!imeVisible) return@collect
+                val layout = listState.layoutInfo
+                val nearLatest = layout.visibleItemsInfo.lastOrNull()?.index
+                    ?.let { it >= layout.totalItemsCount - 2 } == true
+                if (nearLatest && layout.totalItemsCount > 0) {
+                    listState.animateScrollToItem(layout.totalItemsCount - 1)
+                }
+            }
     }
 
     Scaffold(
