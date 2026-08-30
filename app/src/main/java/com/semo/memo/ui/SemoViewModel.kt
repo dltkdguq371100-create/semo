@@ -134,10 +134,6 @@ class SemoViewModel(
         _events.emit(UiEvent.BundleCreated(ids.size, id))
     }
 
-    fun updateBundleTitle(id: Long, title: String) = action("제목을 저장하지 못했습니다.") {
-        repository.updateBundleTitle(id, title)
-    }
-
     private val titleSaveJobs = ConcurrentHashMap<Long, Job>()
     private val contentSaveJobs = ConcurrentHashMap<Long, Job>()
 
