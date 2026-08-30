@@ -12,6 +12,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -133,12 +134,8 @@ class SemoViewModel(
         _events.emit(UiEvent.BundleCreated(ids.size, id))
     }
 
-    fun updateBundleTitle(id: Long, title: String) = action("제목을 저장하지 못했습니다.") {
-        repository.updateBundleTitle(id, title)
-    }
-
-    private val titleSaveJobs = mutableMapOf<Long, Job>()
-    private val contentSaveJobs = mutableMapOf<Long, Job>()
+    private val titleSaveJobs = ConcurrentHashMap<Long, Job>()
+    private val contentSaveJobs = ConcurrentHashMap<Long, Job>()
 
     fun updateBundleTitleDebounced(id: Long, title: String) {
         titleSaveJobs[id]?.cancel()
@@ -210,6 +207,10 @@ class SemoViewModel(
         persistSelection(emptySet())
         updateDraft("")
         _events.emit(UiEvent.Message("백업으로 데이터를 대체했습니다."))
+    }
+
+    fun notifyCopied() {
+        viewModelScope.launch { _events.emit(UiEvent.Message("복사했습니다")) }
     }
 
     private fun readSelection(): Set<Long> =

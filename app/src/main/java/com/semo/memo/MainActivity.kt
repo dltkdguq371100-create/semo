@@ -1,5 +1,7 @@
 package com.semo.memo
 
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -53,7 +55,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
@@ -62,8 +66,8 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Upload
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -96,6 +100,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
@@ -106,12 +111,15 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -135,6 +143,7 @@ import com.semo.memo.data.previewText
 import com.semo.memo.ui.AppAccent
 import com.semo.memo.ui.AppBackground
 import com.semo.memo.ui.AppBorder
+import com.semo.memo.ui.AppSelected
 import com.semo.memo.ui.AppSurface
 import com.semo.memo.ui.AppSurfaceVariant
 import com.semo.memo.ui.InactiveIcon
@@ -150,6 +159,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -282,8 +292,19 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
     var actionMemo by remember { mutableStateOf<MemoEntity?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val composerRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
     var initialScrollDone by rememberSaveable { mutableStateOf(false) }
+    var didAutoFocus by rememberSaveable { mutableStateOf(false) }
     var composerHeight by remember { mutableIntStateOf(0) }
+    val imeVisible = rememberUpdatedState(WindowInsets.ime.getBottom(density) > 0)
+    var expandedMemoIds by rememberSaveable(
+        stateSaver = Saver<Set<Long>, ArrayList<Long>>(
+            save = { ArrayList(it) },
+            restore = { it.toSet() },
+        ),
+    ) { mutableStateOf(emptySet()) }
 
     LaunchedEffect(state.isLoading, state.timeline.size) {
         if (!state.isLoading && !initialScrollDone && state.timeline.isNotEmpty()) {
@@ -299,6 +320,25 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
             withFrameNanos { }
             listState.animateScrollToItem(targetIndex)
         }
+    }
+    LaunchedEffect(state.selectionMode, didAutoFocus) {
+        if (didAutoFocus || state.selectionMode) return@LaunchedEffect
+        composerRequester.requestFocus()
+        keyboard?.show()
+        didAutoFocus = true
+    }
+    LaunchedEffect(listState) {
+        snapshotFlow { imeVisible.value }
+            .distinctUntilChanged()
+            .collect { visible ->
+                if (!visible) return@collect
+                val layout = listState.layoutInfo
+                val nearLatest = layout.visibleItemsInfo.lastOrNull()?.index
+                    ?.let { it >= layout.totalItemsCount - 2 } == true
+                if (nearLatest && layout.totalItemsCount > 0) {
+                    listState.animateScrollToItem(layout.totalItemsCount - 1)
+                }
+            }
     }
 
     Scaffold(
@@ -343,6 +383,7 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
                     }
                     composerHeight = height
                 },
+                focusRequester = composerRequester,
             )
         },
     ) { padding ->
@@ -364,6 +405,12 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
                             selected = item.memo.id in state.selectedMemoIds,
                             showTime = item.showTime,
                             modifier = Modifier.padding(top = if (item.startsGroup) 10.dp else 3.dp),
+                            expanded = item.memo.id in expandedMemoIds,
+                            onToggleExpand = {
+                                expandedMemoIds = expandedMemoIds.toMutableSet().apply {
+                                    if (!add(item.memo.id)) remove(item.memo.id)
+                                }
+                            },
                             onClick = {
                                 if (state.selectionMode) vm.toggleSelection(item.memo.id)
                                 else actionMemo = item.memo
@@ -386,6 +433,7 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
             onDismiss = { actionMemo = null },
             onEdit = { actionMemo = null; editing = memo },
             onDelete = { actionMemo = null; deleting = memo },
+            onCopied = vm::notifyCopied,
         )
     }
     editing?.let { memo -> EditMemoDialog(memo, onDismiss = { editing = null }) { vm.updateMemo(memo.id, it); editing = null } }
@@ -403,6 +451,7 @@ internal fun MemoComposer(
     onText: (String) -> Unit,
     onSend: () -> Unit,
     onHeightChanged: (Int) -> Unit = {},
+    focusRequester: FocusRequester? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().background(AppSurface).onSizeChanged { onHeightChanged(it.height) }
@@ -414,6 +463,7 @@ internal fun MemoComposer(
             value = text,
             onValueChange = onText,
             modifier = Modifier.weight(1f)
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
                 .heightIn(min = 48.dp, max = 136.dp)
                 .clip(RoundedCornerShape(24.dp))
                 .background(AppSurface)
@@ -462,7 +512,11 @@ internal fun MemoBubble(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
     showTime: Boolean = true,
+    expanded: Boolean = false,
+    onToggleExpand: () -> Unit = {},
 ) {
+    val lineCount = memo.content.count { it == '\n' } + 1
+    val canCollapse = lineCount > 8
     BoxWithConstraints(modifier.fillMaxWidth()) {
         val maxBubbleWidth = maxWidth * .82f
         Row(
@@ -483,12 +537,29 @@ internal fun MemoBubble(
                 Modifier.widthIn(max = maxBubbleWidth)
                     .testTag("memo-bubble-${memo.id}")
                     .clip(RoundedCornerShape(17.dp))
-                    .background(if (selected) Color(0xFFE3E5E8) else AppSurfaceVariant)
-                    .then(if (selected) Modifier.border(1.dp, AppAccent, RoundedCornerShape(17.dp)) else Modifier)
+                    .background(if (selected) AppSelected else AppSurfaceVariant)
+                    .border(1.dp, if (selected) AppAccent else AppBorder, RoundedCornerShape(17.dp))
                     .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                     .padding(horizontal = 13.dp, vertical = 8.dp),
             ) {
-                Text(memo.content, color = PrimaryText, fontSize = 16.sp, lineHeight = 22.sp)
+                Column {
+                    Text(
+                        memo.content,
+                        color = PrimaryText,
+                        fontSize = 16.sp,
+                        lineHeight = 22.sp,
+                        maxLines = if (canCollapse && !expanded) 8 else Int.MAX_VALUE,
+                        overflow = if (canCollapse && !expanded) TextOverflow.Ellipsis else TextOverflow.Clip,
+                    )
+                    if (canCollapse) {
+                        Text(
+                            if (expanded) "접기" else "더보기",
+                            color = SecondaryText,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(top = 4.dp).clickable(onClick = onToggleExpand),
+                        )
+                    }
+                }
             }
         }
     }
@@ -501,7 +572,10 @@ internal fun MemoActionSheet(
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onCopied: () -> Unit = {},
 ) {
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = AppSurface,
@@ -514,6 +588,33 @@ internal fun MemoActionSheet(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             )
+            TextButton(
+                onClick = {
+                    clipboard.setText(AnnotatedString(memo.content))
+                    if (Build.VERSION.SDK_INT < 33) onCopied()
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Default.ContentCopy, null)
+                Spacer(Modifier.width(10.dp))
+                Text("복사", Modifier.weight(1f))
+            }
+            TextButton(
+                onClick = {
+                    val share = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, memo.content)
+                    }
+                    context.startActivity(Intent.createChooser(share, "공유"))
+                    onDismiss()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Default.Share, null)
+                Spacer(Modifier.width(10.dp))
+                Text("공유", Modifier.weight(1f))
+            }
             TextButton(onClick = onEdit, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.Edit, null)
                 Spacer(Modifier.width(10.dp))
@@ -767,12 +868,16 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
     val allMemos by vm.allMemos.collectAsStateWithLifecycle()
     var title by rememberSaveable(id) { mutableStateOf<String?>(null) }
     var content by rememberSaveable(id) { mutableStateOf<String?>(null) }
+    var titleDirty by rememberSaveable(id) { mutableStateOf(false) }
+    var contentDirty by rememberSaveable(id) { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     val value = bundle
     val latestTitle = rememberUpdatedState(title)
     val latestContent = rememberUpdatedState(content)
+    val latestTitleDirty = rememberUpdatedState(titleDirty)
+    val latestContentDirty = rememberUpdatedState(contentDirty)
 
     LaunchedEffect(value?.bundle?.id) {
         val loaded = value ?: return@LaunchedEffect
@@ -783,9 +888,9 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
     DisposableEffect(id) {
         onDispose {
             val pendingTitle = latestTitle.value
-            if (pendingTitle != null) vm.flushBundleTitle(id, pendingTitle)
+            if (latestTitleDirty.value && pendingTitle != null) vm.flushBundleTitle(id, pendingTitle)
             val pendingContent = latestContent.value
-            if (pendingContent != null) vm.flushBundleContent(id, pendingContent)
+            if (latestContentDirty.value && pendingContent != null) vm.flushBundleContent(id, pendingContent)
         }
     }
 
@@ -819,7 +924,7 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
             item {
                 OutlinedTextField(
                     value = title.orEmpty(),
-                    onValueChange = { title = it; vm.updateBundleTitleDebounced(id, it) },
+                    onValueChange = { title = it; titleDirty = true; vm.updateBundleTitleDebounced(id, it) },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("제목 (선택)") },
                     placeholder = { Text(value.displayTitle()) },
@@ -830,7 +935,7 @@ private fun BundleDetailScreen(vm: SemoViewModel, id: Long, onBack: () -> Unit) 
                 SectionLabel("정리한 내용")
                 OutlinedTextField(
                     value = content.orEmpty(),
-                    onValueChange = { content = it; vm.updateBundleContentDebounced(id, it) },
+                    onValueChange = { content = it; contentDirty = true; vm.updateBundleContentDebounced(id, it) },
                     modifier = Modifier.fillMaxWidth().height(210.dp),
                     placeholder = { Text("내용을 자유롭게 정리하세요") },
                 )
@@ -1099,7 +1204,7 @@ private fun AddMemoDialog(memos: List<MemoEntity>, onDismiss: () -> Unit, onConf
                 items(memos, key = { it.id }) { memo ->
                     Card(
                         onClick = { selected = selected.toMutableSet().apply { if (!add(memo.id)) remove(memo.id) } },
-                        colors = CardDefaults.cardColors(containerColor = if (memo.id in selected) Color(0xFFE3E5E8) else AppSurfaceVariant),
+                        colors = CardDefaults.cardColors(containerColor = if (memo.id in selected) AppSelected else AppSurfaceVariant),
                         border = if (memo.id in selected) BorderStroke(1.dp, AppAccent) else null,
                     ) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
