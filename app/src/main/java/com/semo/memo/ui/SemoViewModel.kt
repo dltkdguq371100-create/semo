@@ -84,6 +84,10 @@ class SemoViewModel(
     val deletedMemos = repository.deletedMemos.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val allBundles = repository.allBundles.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val compactCards = preferences.compactCards.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val recentSearches = preferences.recentSearches.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun addRecentSearch(query: String) = action("검색어를 저장하지 못했습니다.") { preferences.addRecentSearch(query) }
+    fun removeRecentSearch(query: String) = action("검색어를 지우지 못했습니다.") { preferences.removeRecentSearch(query) }
 
     fun bundle(id: Long) = repository.bundle(id)
 
