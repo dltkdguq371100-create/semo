@@ -124,7 +124,10 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -150,6 +153,7 @@ import com.semo.memo.ui.AppBorder
 import com.semo.memo.ui.AppSelected
 import com.semo.memo.ui.AppSurface
 import com.semo.memo.ui.AppSurfaceVariant
+import com.semo.memo.ui.HighlightText
 import com.semo.memo.ui.InactiveIcon
 import com.semo.memo.ui.PrimaryText
 import com.semo.memo.ui.SecondaryText
@@ -679,6 +683,7 @@ internal fun BundleCard(
     bundle: BundleWithMemos,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    highlightQuery: String = "",
     onClick: () -> Unit,
 ) {
     Box(modifier.fillMaxWidth()) {
@@ -691,7 +696,7 @@ internal fun BundleCard(
             ) {
                 Column(Modifier.padding(horizontal = 13.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
-                        bundle.displayTitle(),
+                        highlightMatches(bundle.displayTitle(), highlightQuery),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
@@ -706,7 +711,7 @@ internal fun BundleCard(
                     }
                     HorizontalDivider(color = AppBorder)
                     Text(
-                        bundle.previewText(),
+                        highlightMatches(bundle.previewText(), highlightQuery),
                         color = SecondaryText,
                         fontSize = 14.sp,
                         maxLines = if (compact) 1 else 2,
@@ -896,10 +901,10 @@ private fun SearchScreen(vm: SemoViewModel, onBack: () -> Unit, onBundle: (Long)
                     item { EmptyState("검색 결과가 없습니다", "다른 검색어를 입력해보세요.") }
                 }
                 if (memoResults.isNotEmpty()) item { SectionLabel("원본 메모 ${memoResults.size}") }
-                items(memoResults, key = { "search-memo-${it.id}" }) { SearchMemoRow(it) }
+                items(memoResults, key = { "search-memo-${it.id}" }) { SearchMemoRow(it, highlightQuery = query) }
                 if (bundleResults.isNotEmpty()) item { SectionLabel("묶음 ${bundleResults.size}") }
                 items(bundleResults, key = { "search-bundle-${it.bundle.id}" }) {
-                    BundleCard(it) {
+                    BundleCard(it, highlightQuery = query) {
                         vm.addRecentSearch(query)
                         onBundle(it.bundle.id)
                     }
@@ -931,11 +936,31 @@ private fun RecentSearchChip(term: String, onClick: () -> Unit, onRemove: () -> 
 }
 
 @Composable
-private fun SearchMemoRow(memo: MemoEntity) {
+private fun SearchMemoRow(memo: MemoEntity, highlightQuery: String = "") {
     Card(colors = CardDefaults.cardColors(containerColor = AppSurfaceVariant), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
-            Text(memo.content, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(highlightMatches(memo.content, highlightQuery), maxLines = 3, overflow = TextOverflow.Ellipsis)
             Text(formatDateTime(memo.createdAt), color = SecondaryText, fontSize = 11.sp)
+        }
+    }
+}
+
+internal fun highlightMatches(text: String, query: String): AnnotatedString {
+    val trimmed = query.trim()
+    if (trimmed.isEmpty()) return AnnotatedString(text)
+    return buildAnnotatedString {
+        var start = 0
+        while (true) {
+            val index = text.indexOf(trimmed, start, ignoreCase = true)
+            if (index < 0) {
+                append(text.substring(start))
+                break
+            }
+            append(text.substring(start, index))
+            withStyle(SpanStyle(color = HighlightText, fontWeight = FontWeight.Bold)) {
+                append(text.substring(index, index + trimmed.length))
+            }
+            start = index + trimmed.length
         }
     }
 }
