@@ -18,5 +18,23 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".QuickInputActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Semo.QuickInput"
+            android:windowSoftInputMode="adjustResize"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
+        <receiver
+            android:name=".widget.SemoWidgetReceiver"
+            android:exported="true"
+            android:label="세모 빠른 입력">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/semo_widget_info" />
+        </receiver>
     </application>
 </manifest>
