@@ -9,4 +9,8 @@
         <item name="android:windowActionModeOverlay">true</item>
     </style>
     <style name="Theme.Semo" parent="Theme.Semo.Base" />
+    <style name="Theme.Semo.QuickInput" parent="android:style/Theme.Material.Light.Dialog.NoActionBar">
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+    </style>
 </resources>

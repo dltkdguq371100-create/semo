@@ -19,6 +19,7 @@ val SecondaryText = Color(0xFF6F747C)
 val TimeText = Color(0xFF747981)
 val AppAccent = Color(0xFF25282D)
 val InactiveIcon = Color(0xFF92979F)
+val HighlightText = Color(0xFFC45C26)
 
 private val colors = lightColorScheme(
     primary = AppAccent,

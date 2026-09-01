@@ -14,6 +14,8 @@ class SemoRepository(private val database: SemoDatabase) {
 
     fun bundle(id: Long) = dao.observeBundle(id)
 
+    suspend fun recentMemos(limit: Int): List<MemoEntity> = dao.recentActiveMemos(limit)
+
     suspend fun createMemo(raw: String): Long {
         val content = raw.trim()
         require(content.isNotEmpty()) { "빈 메모는 저장할 수 없습니다." }

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -46,6 +47,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -53,6 +55,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -94,6 +97,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -120,7 +124,10 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -146,6 +153,7 @@ import com.semo.memo.ui.AppBorder
 import com.semo.memo.ui.AppSelected
 import com.semo.memo.ui.AppSurface
 import com.semo.memo.ui.AppSurfaceVariant
+import com.semo.memo.ui.HighlightText
 import com.semo.memo.ui.InactiveIcon
 import com.semo.memo.ui.PrimaryText
 import com.semo.memo.ui.SecondaryText
@@ -390,38 +398,64 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
         if (!state.isLoading && state.timeline.isEmpty()) {
             EmptyState("생각나는 것을 바로 적어보세요", "메모는 이 기기에 안전하게 저장됩니다.", Modifier.padding(padding))
         } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(0.dp),
-                reverseLayout = false,
-            ) {
-                items(state.timeline, key = { it.stableKey }) { item ->
-                    when (item) {
-                        is TimelineItem.DateSeparatorItem -> DateSeparator(item.label)
-                        is TimelineItem.MemoItem -> MemoBubble(
-                            item.memo,
-                            selected = item.memo.id in state.selectedMemoIds,
-                            showTime = item.showTime,
-                            modifier = Modifier.padding(top = if (item.startsGroup) 10.dp else 3.dp),
-                            expanded = item.memo.id in expandedMemoIds,
-                            onToggleExpand = {
-                                expandedMemoIds = expandedMemoIds.toMutableSet().apply {
-                                    if (!add(item.memo.id)) remove(item.memo.id)
-                                }
-                            },
-                            onClick = {
-                                if (state.selectionMode) vm.toggleSelection(item.memo.id)
-                                else actionMemo = item.memo
-                            },
-                            onLongClick = { vm.toggleSelection(item.memo.id) },
-                        )
-                        is TimelineItem.BundleItem -> BundleCard(
-                            item.value,
-                            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
-                            onClick = { onBundle(item.value.bundle.id) },
-                        )
+            val showJumpToLatest by remember {
+                derivedStateOf {
+                    val layout = listState.layoutInfo
+                    val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+                    layout.totalItemsCount > 0 && lastVisible < layout.totalItemsCount - 3
+                }
+            }
+            Box(Modifier.fillMaxSize().padding(padding)) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
+                    reverseLayout = false,
+                ) {
+                    items(state.timeline, key = { it.stableKey }) { item ->
+                        when (item) {
+                            is TimelineItem.DateSeparatorItem -> DateSeparator(item.label)
+                            is TimelineItem.MemoItem -> MemoBubble(
+                                item.memo,
+                                selected = item.memo.id in state.selectedMemoIds,
+                                showTime = item.showTime,
+                                modifier = Modifier.padding(top = if (item.startsGroup) 10.dp else 3.dp),
+                                expanded = item.memo.id in expandedMemoIds,
+                                onToggleExpand = {
+                                    expandedMemoIds = expandedMemoIds.toMutableSet().apply {
+                                        if (!add(item.memo.id)) remove(item.memo.id)
+                                    }
+                                },
+                                onClick = {
+                                    if (state.selectionMode) vm.toggleSelection(item.memo.id)
+                                    else actionMemo = item.memo
+                                },
+                                onLongClick = { vm.toggleSelection(item.memo.id) },
+                            )
+                            is TimelineItem.BundleItem -> BundleCard(
+                                item.value,
+                                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+                                onClick = { onBundle(item.value.bundle.id) },
+                            )
+                        }
+                    }
+                }
+                if (showJumpToLatest) {
+                    Box(
+                        Modifier.align(Alignment.BottomEnd)
+                            .padding(end = 16.dp, bottom = 12.dp)
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(AppSurface)
+                            .border(1.dp, AppBorder, CircleShape)
+                            .clickable {
+                                scope.launch { listState.animateScrollToItem(state.timeline.lastIndex) }
+                            }
+                            .semantics { contentDescription = "최신 메모로 이동" },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Default.ArrowDownward, null, tint = SecondaryText, modifier = Modifier.size(20.dp))
                     }
                 }
             }
@@ -649,6 +683,7 @@ internal fun BundleCard(
     bundle: BundleWithMemos,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    highlightQuery: String = "",
     onClick: () -> Unit,
 ) {
     Box(modifier.fillMaxWidth()) {
@@ -661,7 +696,7 @@ internal fun BundleCard(
             ) {
                 Column(Modifier.padding(horizontal = 13.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
-                        bundle.displayTitle(),
+                        highlightMatches(bundle.displayTitle(), highlightQuery),
                         fontSize = 17.sp,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
@@ -676,7 +711,7 @@ internal fun BundleCard(
                     }
                     HorizontalDivider(color = AppBorder)
                     Text(
-                        bundle.previewText(),
+                        highlightMatches(bundle.previewText(), highlightQuery),
                         color = SecondaryText,
                         fontSize = 14.sp,
                         maxLines = if (compact) 1 else 2,
@@ -808,11 +843,12 @@ internal fun BundleGridCard(bundle: BundleWithMemos, compact: Boolean, onClick: 
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun SearchScreen(vm: SemoViewModel, onBack: () -> Unit, onBundle: (Long) -> Unit) {
     val memos by vm.allMemos.collectAsStateWithLifecycle()
     val bundles by vm.allBundles.collectAsStateWithLifecycle()
+    val recentSearches by vm.recentSearches.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     val requester = remember { FocusRequester() }
     // TODO: If memo/bundle counts grow into the thousands, replace in-memory filtering
@@ -837,25 +873,94 @@ private fun SearchScreen(vm: SemoViewModel, onBack: () -> Unit, onBundle: (Long)
             OutlinedTextField(
                 query, { query = it }, Modifier.fillMaxWidth().focusRequester(requester),
                 placeholder = { Text("메모와 묶음 검색") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { vm.addRecentSearch(query) }),
             )
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                if (query.isBlank()) item { EmptyState("찾을 내용을 입력하세요", "원본 메모, 묶음 제목과 편집 내용을 검색합니다.") }
-                else if (memoResults.isEmpty() && bundleResults.isEmpty()) item { EmptyState("검색 결과가 없습니다", "다른 검색어를 입력해보세요.") }
+                if (query.isBlank()) {
+                    if (recentSearches.isEmpty()) {
+                        item { EmptyState("찾을 내용을 입력하세요", "원본 메모, 묶음 제목과 편집 내용을 검색합니다.") }
+                    } else {
+                        item { SectionLabel("최근 검색어") }
+                        item {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                recentSearches.forEach { term ->
+                                    RecentSearchChip(
+                                        term = term,
+                                        onClick = { query = term },
+                                        onRemove = { vm.removeRecentSearch(term) },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (memoResults.isEmpty() && bundleResults.isEmpty()) {
+                    item { EmptyState("검색 결과가 없습니다", "다른 검색어를 입력해보세요.") }
+                }
                 if (memoResults.isNotEmpty()) item { SectionLabel("원본 메모 ${memoResults.size}") }
-                items(memoResults, key = { "search-memo-${it.id}" }) { SearchMemoRow(it) }
+                items(memoResults, key = { "search-memo-${it.id}" }) { SearchMemoRow(it, highlightQuery = query) }
                 if (bundleResults.isNotEmpty()) item { SectionLabel("묶음 ${bundleResults.size}") }
-                items(bundleResults, key = { "search-bundle-${it.bundle.id}" }) { BundleCard(it) { onBundle(it.bundle.id) } }
+                items(bundleResults, key = { "search-bundle-${it.bundle.id}" }) {
+                    BundleCard(it, highlightQuery = query) {
+                        vm.addRecentSearch(query)
+                        onBundle(it.bundle.id)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun SearchMemoRow(memo: MemoEntity) {
+private fun RecentSearchChip(term: String, onClick: () -> Unit, onRemove: () -> Unit) {
+    Row(
+        Modifier.clip(RoundedCornerShape(18.dp))
+            .background(AppSurface)
+            .border(1.dp, AppBorder, RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(start = 14.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(term, color = PrimaryText, fontSize = 14.sp)
+        Icon(
+            Icons.Default.Close,
+            "검색어 삭제",
+            tint = InactiveIcon,
+            modifier = Modifier.size(18.dp).clip(CircleShape).clickable(onClick = onRemove),
+        )
+    }
+}
+
+@Composable
+private fun SearchMemoRow(memo: MemoEntity, highlightQuery: String = "") {
     Card(colors = CardDefaults.cardColors(containerColor = AppSurfaceVariant), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
-            Text(memo.content, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(highlightMatches(memo.content, highlightQuery), maxLines = 3, overflow = TextOverflow.Ellipsis)
             Text(formatDateTime(memo.createdAt), color = SecondaryText, fontSize = 11.sp)
+        }
+    }
+}
+
+internal fun highlightMatches(text: String, query: String): AnnotatedString {
+    val trimmed = query.trim()
+    if (trimmed.isEmpty()) return AnnotatedString(text)
+    return buildAnnotatedString {
+        var start = 0
+        while (true) {
+            val index = text.indexOf(trimmed, start, ignoreCase = true)
+            if (index < 0) {
+                append(text.substring(start))
+                break
+            }
+            append(text.substring(start, index))
+            withStyle(SpanStyle(color = HighlightText, fontWeight = FontWeight.Bold)) {
+                append(text.substring(index, index + trimmed.length))
+            }
+            start = index + trimmed.length
         }
     }
 }

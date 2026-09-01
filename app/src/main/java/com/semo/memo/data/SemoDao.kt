@@ -19,6 +19,9 @@ interface SemoDao {
     @Query("SELECT * FROM memos WHERE isDeleted = 1 ORDER BY updatedAt DESC")
     fun observeDeletedMemos(): Flow<List<MemoEntity>>
 
+    @Query("SELECT * FROM memos WHERE isDeleted = 0 ORDER BY createdAt DESC LIMIT :limit")
+    suspend fun recentActiveMemos(limit: Int): List<MemoEntity>
+
     @Transaction
     @Query("SELECT * FROM bundles WHERE isArchived = 0 ORDER BY isPinned DESC, updatedAt DESC, createdAt DESC")
     fun observeActiveBundles(): Flow<List<BundleWithMemos>>
