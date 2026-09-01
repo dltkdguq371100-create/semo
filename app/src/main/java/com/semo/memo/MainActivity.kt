@@ -53,6 +53,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -94,6 +95,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -390,38 +392,64 @@ private fun TimelineScreen(vm: SemoViewModel, onSearch: () -> Unit, onBundle: (L
         if (!state.isLoading && state.timeline.isEmpty()) {
             EmptyState("생각나는 것을 바로 적어보세요", "메모는 이 기기에 안전하게 저장됩니다.", Modifier.padding(padding))
         } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(0.dp),
-                reverseLayout = false,
-            ) {
-                items(state.timeline, key = { it.stableKey }) { item ->
-                    when (item) {
-                        is TimelineItem.DateSeparatorItem -> DateSeparator(item.label)
-                        is TimelineItem.MemoItem -> MemoBubble(
-                            item.memo,
-                            selected = item.memo.id in state.selectedMemoIds,
-                            showTime = item.showTime,
-                            modifier = Modifier.padding(top = if (item.startsGroup) 10.dp else 3.dp),
-                            expanded = item.memo.id in expandedMemoIds,
-                            onToggleExpand = {
-                                expandedMemoIds = expandedMemoIds.toMutableSet().apply {
-                                    if (!add(item.memo.id)) remove(item.memo.id)
-                                }
-                            },
-                            onClick = {
-                                if (state.selectionMode) vm.toggleSelection(item.memo.id)
-                                else actionMemo = item.memo
-                            },
-                            onLongClick = { vm.toggleSelection(item.memo.id) },
-                        )
-                        is TimelineItem.BundleItem -> BundleCard(
-                            item.value,
-                            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
-                            onClick = { onBundle(item.value.bundle.id) },
-                        )
+            val showJumpToLatest by remember {
+                derivedStateOf {
+                    val layout = listState.layoutInfo
+                    val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+                    layout.totalItemsCount > 0 && lastVisible < layout.totalItemsCount - 3
+                }
+            }
+            Box(Modifier.fillMaxSize().padding(padding)) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp),
+                    reverseLayout = false,
+                ) {
+                    items(state.timeline, key = { it.stableKey }) { item ->
+                        when (item) {
+                            is TimelineItem.DateSeparatorItem -> DateSeparator(item.label)
+                            is TimelineItem.MemoItem -> MemoBubble(
+                                item.memo,
+                                selected = item.memo.id in state.selectedMemoIds,
+                                showTime = item.showTime,
+                                modifier = Modifier.padding(top = if (item.startsGroup) 10.dp else 3.dp),
+                                expanded = item.memo.id in expandedMemoIds,
+                                onToggleExpand = {
+                                    expandedMemoIds = expandedMemoIds.toMutableSet().apply {
+                                        if (!add(item.memo.id)) remove(item.memo.id)
+                                    }
+                                },
+                                onClick = {
+                                    if (state.selectionMode) vm.toggleSelection(item.memo.id)
+                                    else actionMemo = item.memo
+                                },
+                                onLongClick = { vm.toggleSelection(item.memo.id) },
+                            )
+                            is TimelineItem.BundleItem -> BundleCard(
+                                item.value,
+                                modifier = Modifier.padding(top = 16.dp, bottom = 8.dp),
+                                onClick = { onBundle(item.value.bundle.id) },
+                            )
+                        }
+                    }
+                }
+                if (showJumpToLatest) {
+                    Box(
+                        Modifier.align(Alignment.BottomEnd)
+                            .padding(end = 16.dp, bottom = 12.dp)
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(AppSurface)
+                            .border(1.dp, AppBorder, CircleShape)
+                            .clickable {
+                                scope.launch { listState.animateScrollToItem(state.timeline.lastIndex) }
+                            }
+                            .semantics { contentDescription = "최신 메모로 이동" },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Default.ArrowDownward, null, tint = SecondaryText, modifier = Modifier.size(20.dp))
                     }
                 }
             }
